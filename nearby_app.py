@@ -488,27 +488,68 @@ def append_to_excel(info: dict):
 # ──────────────────────────────────────────────────────
 # 위치 가져오기 (브라우저 GPS)
 # ──────────────────────────────────────────────────────
-LOCATION_JS = """
+GPS_HTML = """
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:8px;font-family:sans-serif;">
+<button onclick="getLocation()" style="
+    background:#ff6b35;color:white;border:none;
+    padding:12px 20px;border-radius:10px;
+    font-size:15px;cursor:pointer;width:100%;
+    min-height:48px;
+">📡 GPS 위치 감지 시작</button>
+<div id="status" style="margin-top:8px;font-size:13px;color:#666;"></div>
+<div id="coords" style="margin-top:4px;font-size:14px;font-weight:bold;color:#ff6b35;"></div>
 <script>
 function getLocation() {
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            function(pos) {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
-                if (input) {
-                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                    nativeInputValueSetter.call(input, lat + ',' + lng);
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-            },
-            function(err) { alert('위치 접근이 거부되었습니다: ' + err.message); }
-        );
+    var btn = document.querySelector('button');
+    var status = document.getElementById('status');
+    var coords = document.getElementById('coords');
+    
+    btn.innerText = '⏳ 위치 감지 중...';
+    btn.style.background = '#888';
+    status.innerText = '브라우저에서 위치 허용을 눌러주세요';
+    
+    if (!navigator.geolocation) {
+        status.innerText = '❌ 이 브라우저는 GPS를 지원하지 않습니다';
+        btn.innerText = '📡 GPS 위치 감지 시작';
+        btn.style.background = '#ff6b35';
+        return;
     }
+    
+    navigator.geolocation.getCurrentPosition(
+        function(pos) {
+            var lat = pos.coords.latitude.toFixed(6);
+            var lng = pos.coords.longitude.toFixed(6);
+            var result = lat + ', ' + lng;
+            
+            status.innerText = '✅ 위치 감지 성공! 아래 좌표를 복사하세요:';
+            coords.innerText = result;
+            btn.innerText = '✅ 감지 완료 - 다시 감지하려면 클릭';
+            btn.style.background = '#4caf50';
+            
+            // 클립보드 복사
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(result).then(function() {
+                    status.innerText = '✅ 클립보드에 복사됨! 아래 입력창에 붙여넣기 하세요';
+                });
+            }
+        },
+        function(err) {
+            var msg = '';
+            if (err.code === 1) msg = '위치 접근이 거부되었습니다. 브라우저 설정에서 위치 허용 후 다시 시도하세요';
+            else if (err.code === 2) msg = '위치를 찾을 수 없습니다';
+            else msg = '시간 초과. 다시 시도해주세요';
+            status.innerText = '❌ ' + msg;
+            btn.innerText = '📡 GPS 위치 감지 시작';
+            btn.style.background = '#ff6b35';
+        },
+        {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
+    );
 }
-getLocation();
 </script>
+</body>
+</html>
 """
 
 
@@ -548,31 +589,35 @@ def main():
     with tab1:
         st.markdown("#### 📍 현재 위치 설정")
 
-        # GPS 자동 감지 버튼
-        col_gps, col_manual = st.columns([1, 1])
-        with col_gps:
-            if st.button("📡 GPS 자동 감지", use_container_width=True):
-                st.components.v1.html(LOCATION_JS, height=0)
-                st.info("브라우저에서 위치 허용 후 아래에 좌표가 입력됩니다.")
+        # GPS 자동 감지 - 개선된 iframe 방식
+        st.markdown("**① GPS 자동 감지**")
+        st.caption("아래 버튼 클릭 → 위치 허용 → 좌표가 자동으로 클립보드에 복사됩니다")
+        st.components.v1.html(GPS_HTML, height=110)
 
-        with col_manual:
-            st.caption("또는 아래에 직접 입력")
-
-        # 위치 입력
+        st.markdown("**② 좌표 입력** (GPS 감지 후 붙여넣기 또는 직접 입력)")
         loc_input = st.text_input(
             "위치 (위도,경도)",
-            placeholder="예) 37.7557, 127.0446  또는 GPS 자동 감지",
-            label_visibility="collapsed"
+            placeholder="예) 37.7419, 127.0300",
+            label_visibility="collapsed",
+            key="loc_input"
         )
+
+        with st.expander("📌 좌표 찾는 다른 방법"):
+            st.markdown("""
+- **구글 지도** → 원하는 위치 **길게 누르기** → 하단에 좌표 표시 → 복사
+- **네이버 지도** → 현재위치 검색 → URL의 `@위도,경도` 부분 복사
+- **의정부 브라운스톤흥선**: `37.7419, 127.0300`
+            """)
 
         if loc_input and "," in loc_input:
             try:
-                lat, lng = map(float, loc_input.split(","))
+                parts = loc_input.strip().split(",")
+                lat, lng = float(parts[0].strip()), float(parts[1].strip())
                 st.session_state.user_lat = lat
                 st.session_state.user_lng = lng
                 st.success(f"✅ 위치 설정됨: {lat:.4f}, {lng:.4f}")
             except:
-                st.error("위도,경도 형식으로 입력해주세요. 예) 37.7557, 127.0446")
+                st.error("위도,경도 형식으로 입력해주세요. 예) 37.7419, 127.0300")
 
         st.divider()
 
