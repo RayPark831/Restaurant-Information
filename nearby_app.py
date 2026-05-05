@@ -499,16 +499,17 @@ GPS_HTML = """
     min-height:48px;
 ">📡 GPS 위치 감지 시작</button>
 <div id="status" style="margin-top:8px;font-size:13px;color:#666;"></div>
-<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
-  <div id="coords" style="font-size:15px;font-weight:bold;color:#ff6b35;"></div>
+<div style="margin-top:10px;">
+  <div id="coords" style="font-size:16px;font-weight:bold;color:#ff6b35;margin-bottom:8px;word-break:break-all;"></div>
   <button id="copy_btn" onclick="copyCoords()" style="
     display:none;
     background:#ff6b35;color:white;border:none;
-    padding:6px 12px;border-radius:8px;
-    font-size:13px;cursor:pointer;
-  ">📋 복사</button>
+    padding:10px 20px;border-radius:10px;
+    font-size:14px;cursor:pointer;
+    width:100%;margin-top:4px;
+  ">📋 좌표 복사하기</button>
+  <div id="copy_ok" style="font-size:13px;color:#4caf50;margin-top:6px;display:none;font-weight:bold;">✅ 복사됐습니다! 아래 입력창에 붙여넣기 하세요</div>
 </div>
-<div id="copy_ok" style="font-size:12px;color:#4caf50;display:none;">✅ 복사됨!</div>
 <script>
 function getLocation() {
     var btn = document.querySelector('button');
@@ -564,24 +565,44 @@ function getLocation() {
     );
 }
 function copyCoords() {
-    var coords = document.getElementById('coords').innerText;
+    var coords = document.getElementById('coords').innerText.trim();
     var copyOk = document.getElementById('copy_ok');
-    if (navigator.clipboard) {
+    var btn = document.getElementById('copy_btn');
+    
+    function showCopied() {
+        copyOk.style.display = 'block';
+        btn.style.background = '#4caf50';
+        btn.innerText = '✅ 복사됨!';
+        setTimeout(function(){
+            copyOk.style.display = 'none';
+            btn.style.background = '#ff6b35';
+            btn.innerText = '📋 좌표 복사하기';
+        }, 2500);
+    }
+    
+    if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(coords).then(function() {
-            copyOk.style.display = 'block';
-            setTimeout(function(){ copyOk.style.display = 'none'; }, 2000);
+            showCopied();
+        }).catch(function() {
+            fallbackCopy(coords);
+            showCopied();
         });
     } else {
-        // 구형 브라우저 대응
-        var el = document.createElement('textarea');
-        el.value = coords;
-        document.body.appendChild(el);
-        el.select();
-        document.execCommand('copy');
-        document.body.removeChild(el);
-        copyOk.style.display = 'block';
-        setTimeout(function(){ copyOk.style.display = 'none'; }, 2000);
+        fallbackCopy(coords);
+        showCopied();
     }
+}
+
+function fallbackCopy(text) {
+    var el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(el);
 }
 </script>
 </body>
@@ -628,7 +649,7 @@ def main():
         # GPS 자동 감지 - 개선된 iframe 방식
         st.markdown("**① GPS 자동 감지**")
         st.caption("아래 버튼 클릭 → 위치 허용 → 좌표가 자동으로 클립보드에 복사됩니다")
-        st.components.v1.html(GPS_HTML, height=110)
+        st.components.v1.html(GPS_HTML, height=160)
 
         st.markdown("**② 좌표 입력** (GPS 감지 후 붙여넣기 또는 직접 입력)")
         loc_input = st.text_input(
