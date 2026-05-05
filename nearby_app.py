@@ -499,7 +499,16 @@ GPS_HTML = """
     min-height:48px;
 ">📡 GPS 위치 감지 시작</button>
 <div id="status" style="margin-top:8px;font-size:13px;color:#666;"></div>
-<div id="coords" style="margin-top:4px;font-size:14px;font-weight:bold;color:#ff6b35;"></div>
+<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+  <div id="coords" style="font-size:15px;font-weight:bold;color:#ff6b35;"></div>
+  <button id="copy_btn" onclick="copyCoords()" style="
+    display:none;
+    background:#ff6b35;color:white;border:none;
+    padding:6px 12px;border-radius:8px;
+    font-size:13px;cursor:pointer;
+  ">📋 복사</button>
+</div>
+<div id="copy_ok" style="font-size:12px;color:#4caf50;display:none;">✅ 복사됨!</div>
 <script>
 function getLocation() {
     var btn = document.querySelector('button');
@@ -528,11 +537,18 @@ function getLocation() {
             btn.innerText = '✅ 감지 완료 - 다시 감지하려면 클릭';
             btn.style.background = '#4caf50';
             
-            // 클립보드 복사
+            // 복사 버튼 표시
+            document.getElementById('copy_btn').style.display = 'inline-block';
+            
+            // 클립보드 자동 복사 시도
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(result).then(function() {
-                    status.innerText = '✅ 클립보드에 복사됨! 아래 입력창에 붙여넣기 하세요';
+                    status.innerHTML = '✅ 클립보드에 자동 복사됨! 입력창에 붙여넣기 하세요';
+                }).catch(function() {
+                    status.innerHTML = '📋 복사 버튼을 눌러 좌표를 복사하세요';
                 });
+            } else {
+                status.innerHTML = '📋 복사 버튼을 눌러 좌표를 복사하세요';
             }
         },
         function(err) {
@@ -546,6 +562,26 @@ function getLocation() {
         },
         {enableHighAccuracy: true, timeout: 15000, maximumAge: 0}
     );
+}
+function copyCoords() {
+    var coords = document.getElementById('coords').innerText;
+    var copyOk = document.getElementById('copy_ok');
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(coords).then(function() {
+            copyOk.style.display = 'block';
+            setTimeout(function(){ copyOk.style.display = 'none'; }, 2000);
+        });
+    } else {
+        // 구형 브라우저 대응
+        var el = document.createElement('textarea');
+        el.value = coords;
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+        copyOk.style.display = 'block';
+        setTimeout(function(){ copyOk.style.display = 'none'; }, 2000);
+    }
 }
 </script>
 </body>
