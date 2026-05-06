@@ -183,7 +183,7 @@ def calc_distance(lat1, lng1, lat2, lng2):
 def calc_priority_score(info: dict) -> int:
     score = 0
     tr = info.get("추천사유", {})
-    michelin = tr.get("미슐랭","")
+    michelin = tr.get("미슐랭","") if is_valid(tr.get("미슐랭","")) else ""
     if "3스타" in michelin: score += 100
     elif "2스타" in michelin: score += 80
     elif "1스타" in michelin: score += 60
@@ -193,7 +193,7 @@ def calc_priority_score(info: dict) -> int:
         score += 50 if "블루리본" in tr["블루리본"] else 30
     if tr.get("로컬인증"): score += 40
     nopo = tr.get("노포","")
-    if nopo:
+    if is_valid(nopo):
         years = re.findall(r'\d{4}', nopo)
         if years:
             nopo_years = date.today().year - int(years[0])
@@ -221,31 +221,37 @@ def calc_priority_score(info: dict) -> int:
 # ──────────────────────────────────────────────────────
 # 추천사유 HTML (중요도 순)
 # ──────────────────────────────────────────────────────
+def is_valid(val):
+    """빈값, '빈문자열', 'N', 'none', '없음' 등 무효값 필터링"""
+    if not val: return False
+    v = str(val).strip().lower()
+    return v not in ("", "빈문자열", "빈값", "n", "none", "없음", "해당없음", "null", "-", "unknown")
+
 def build_reason_html(tr: dict, waiting: str = "") -> str:
     items = []
-    if tr.get("미슐랭"):   items.append(("red",   f"⭐ {tr['미슐랭']}"))
-    if tr.get("블루리본"): items.append(("red",   f"🎗️ {tr['블루리본']}"))
-    if tr.get("로컬인증"): items.append(("red",   f"🏆 {tr['로컬인증']}"))
+    if is_valid(tr.get("미슐랭")):   items.append(("red",   f"⭐ {tr['미슐랭']}"))
+    if is_valid(tr.get("블루리본")): items.append(("red",   f"🎗️ {tr['블루리본']}"))
+    if is_valid(tr.get("로컬인증")): items.append(("red",   f"🏆 {tr['로컬인증']}"))
     nopo = tr.get("노포","")
-    if nopo:
+    if is_valid(nopo):
         years = re.findall(r'\d{4}', nopo)
         nopo_years = date.today().year - int(years[0]) if years else 0
         priority = "red" if nopo_years >= 50 else "orange" if nopo_years >= 30 else "blue"
         label = f"🏛️ {nopo}" + (f" ({nopo_years}년)" if nopo_years > 0 else "")
         items.append((priority, label))
-    if tr.get("백년가게"): items.append(("red",    "🏅 백년가게"))
+    if is_valid(tr.get("백년가게")): items.append(("red",    "🏅 백년가게"))
     if tr.get("오래가게"): items.append(("orange", "🏅 오래가게"))
-    if tr.get("방송_생활의달인"): items.append(("red",    "📺 생활의달인"))
-    if tr.get("방송_수요미식회"): items.append(("red",    "📺 수요미식회"))
-    if tr.get("방송_백종원"):     items.append(("red",    f"📺 백종원({tr['방송_백종원']})"))
-    if tr.get("방송_더들리"):     items.append(("red",    "📺 더들리"))
+    if is_valid(tr.get("방송_생활의달인")): items.append(("red",    "📺 생활의달인"))
+    if is_valid(tr.get("방송_수요미식회")): items.append(("red",    "📺 수요미식회"))
+    if is_valid(tr.get("방송_백종원")):     items.append(("red",    f"📺 백종원({tr['방송_백종원']})"))
+    if is_valid(tr.get("방송_더들리")):     items.append(("red",    "📺 더들리"))
     if tr.get("방송_허영만"):     items.append(("orange", "📺 허영만"))
     if tr.get("방송_정용진"):     items.append(("orange", "📺 정용진"))
     if tr.get("방송_전현무"):     items.append(("orange", "📺 전현무"))
-    if tr.get("방송_요리경연"):   items.append(("orange", f"🏆 {tr['방송_요리경연']}"))
-    if tr.get("방송_빅페이스"):   items.append(("orange", "📺 빅페이스"))
-    if tr.get("방송_나의시선"):   items.append(("blue",   "📺 나의시선"))
-    if tr.get("방송_기타"):       items.append(("blue",   f"📺 {tr['방송_기타']}"))
+    if is_valid(tr.get("방송_요리경연")):   items.append(("orange", f"🏆 {tr['방송_요리경연']}"))
+    if is_valid(tr.get("방송_빅페이스")):   items.append(("orange", "📺 빅페이스"))
+    if is_valid(tr.get("방송_나의시선")):   items.append(("blue",   "📺 나의시선"))
+    if is_valid(tr.get("방송_기타")):       items.append(("blue",   f"📺 {tr['방송_기타']}"))
     if "상시" in waiting:   items.append(("red",    "⏰ 상시웨이팅"))
     elif "피크" in waiting: items.append(("orange", "⏰ 피크타임웨이팅"))
     if not items: return '<span class="badge badge-blue">로컬 맛집</span>'
@@ -273,13 +279,27 @@ def search_nearby_restaurants(lat, lng, radius_km, keyword=""):
                 break
 
     params = {"location": f"{lat},{lng}", "radius": radius_m, "type": "restaurant",
-              "key": PLACES_API_KEY, "language": "ko"}
+              "key": PLACES_API_KEY, "language": "en"}
     if keyword: params["keyword"] = keyword
 
+    # 한국어로도 추가 검색 후 합치기
+    params_ko = {"location": f"{lat},{lng}", "radius": radius_m, "type": "restaurant",
+                 "key": PLACES_API_KEY, "language": "ko"}
+    if keyword: params_ko["keyword"] = keyword
+
+    # 영어 결과
+    results_en = requests.get(url, params=params).json().get("results", [])
+    # 한국어 결과
+    results_ko = requests.get(url, params=params_ko).json().get("results", [])
+
+    # 중복 제거 (place_id 기준)
+    seen_ids = set()
     results = []
-    resp = requests.get(url, params=params).json()
-    results.extend(resp.get("results", []))
-    # B) 경량화: 1페이지만 검색 (최대 20개)
+    for r in results_en + results_ko:
+        pid = r.get("place_id","")
+        if pid and pid not in seen_ids:
+            seen_ids.add(pid)
+            results.append(r)
 
     restaurants = []
     for r in results[:MAX_RESULTS]:
