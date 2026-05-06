@@ -24,7 +24,7 @@ PLACES_API_KEY  = st.secrets["PLACES_API_KEY"]
 EXCEL_FILE  = "맛집정보.xlsx"
 SHEET_NAME  = "Sheet1"
 BATCH_SIZE  = 5
-MAX_RESULTS = 30
+MAX_RESULTS = 20
 
 # ──────────────────────────────────────────────────────
 # 페이지 설정
@@ -276,15 +276,9 @@ def search_nearby_restaurants(lat, lng, radius_km, keyword=""):
     if keyword: params["keyword"] = keyword
 
     results = []
-    page_count = 0
-    while page_count < 3:
-        resp = requests.get(url, params=params).json()
-        results.extend(resp.get("results", []))
-        next_token = resp.get("next_page_token")
-        page_count += 1
-        if not next_token or len(results) >= MAX_RESULTS: break
-        time.sleep(2)
-        params = {"pagetoken": next_token, "key": PLACES_API_KEY, "language": "ko"}
+    resp = requests.get(url, params=params).json()
+    results.extend(resp.get("results", []))
+    # B) 경량화: 1페이지만 검색 (최대 20개)
 
     restaurants = []
     for r in results[:MAX_RESULTS]:
@@ -308,46 +302,11 @@ def get_simple_info_batch(restaurants: list) -> list:
         f"{i+1}. 식당명: {r['name']}, 주소: {r['address']}, 거리: {r['distance']:.1f}km"
         for i, r in enumerate(restaurants)
     ])
-    prompt = f"""
-당신은 맛집 전문 리서처입니다.
-아래 {len(restaurants)}개 식당 정보를 조사하여 JSON 배열로만 출력하세요. 다른 텍스트 없이 JSON만 출력하세요.
+    prompt = f"""맛집 리서처. 아래 식당들 정보를 JSON 배열로만 출력. 다른 텍스트 없이 JSON만.
 
 {names_list}
 
-[중요] 노포(오래된 식당) 정보를 반드시 확인하세요:
-- 창업연도를 최대한 정확히 조사하세요
-- 백년가게, 오래가게 등록 여부 확인하세요
-- 방송출연(생활의달인, 수요미식회, 백종원, 더들리 등) 반드시 확인하세요
-
-[
-  {{
-    "순번": 1,
-    "식당명": "정확한 식당명",
-    "카테고리": "음식 종류 한글",
-    "거리": "X.Xkm",
-    "추천사유": {{
-      "미슐랭": "", "블루리본": "", "로컬인증": "",
-      "노포": "예)1965년 창업 또는 빈문자열",
-      "백년가게": "Y 또는 빈문자열",
-      "오래가게": "Y 또는 빈문자열",
-      "방송_생활의달인": "Y 또는 빈문자열",
-      "방송_수요미식회": "Y 또는 빈문자열",
-      "방송_백종원": "출연방송명 또는 빈문자열",
-      "방송_허영만": "Y 또는 빈문자열",
-      "방송_정용진": "Y 또는 빈문자열",
-      "방송_전현무": "Y 또는 빈문자열",
-      "방송_요리경연": "대회명 또는 빈문자열",
-      "방송_더들리": "Y 또는 빈문자열",
-      "방송_빅페이스": "Y 또는 빈문자열",
-      "방송_나의시선": "Y 또는 빈문자열",
-      "방송_기타": ""
-    }},
-    "대기여부": "상시웨이팅필수/피크타임웨이팅/웨이팅없음",
-    "signature1": {{"메뉴명": "대표메뉴1", "가격": "가격"}},
-    "signature2": {{"메뉴명": "대표메뉴2", "가격": "가격"}},
-    "signature3": {{"메뉴명": "대표메뉴3", "가격": "가격"}}
-  }}
-]
+[{{"순번":1,"식당명":"","카테고리":"","거리":"","추천사유":{{"미슐랭":"","블루리본":"","로컬인증":"","노포":"예)1965년창업","백년가게":"Y또는빈값","오래가게":"Y또는빈값","방송_생활의달인":"Y또는빈값","방송_수요미식회":"Y또는빈값","방송_백종원":"출연방송명","방송_허영만":"Y또는빈값","방송_정용진":"Y또는빈값","방송_전현무":"Y또는빈값","방송_요리경연":"대회명","방송_더들리":"Y또는빈값","방송_빅페이스":"Y또는빈값","방송_기타":""}},"대기여부":"상시웨이팅필수/피크타임웨이팅/웨이팅없음","signature1":{{"메뉴명":"","가격":""}},"signature2":{{"메뉴명":"","가격":""}},"signature3":{{"메뉴명":"","가격":""}}}}]
 """
     try:
         response = model.generate_content(prompt)
@@ -367,33 +326,9 @@ def get_simple_info_batch(restaurants: list) -> list:
 # ──────────────────────────────────────────────────────
 def get_detail_info(restaurant_name: str) -> dict:
     model = init_gemini()
-    prompt = f"""
-당신은 전 세계 맛집 전문 리서처입니다.
-아래 식당 정보를 JSON으로만 출력하세요. 정보없는 항목은 빈문자열("")로 처리하세요.
-식당명: {restaurant_name}
-
-언어원칙: 한국식당=한글, 해외영어권=한글/영어, 해외비영어권=한글/영어/현지어
-메뉴가격: 한국=원화, 해외=현지통화+한화병기
-
-{{
-  "식당명": "", "음식국적": "", "카테고리": "", "기준메뉴": "",
-  "추천사유": {{
-    "미슐랭": "", "블루리본": "", "로컬인증": "",
-    "노포": "", "백년가게": "", "오래가게": "",
-    "방송_생활의달인": "", "방송_수요미식회": "", "방송_허영만": "",
-    "방송_백종원": "", "방송_정용진": "", "방송_전현무": "",
-    "방송_요리경연": "", "방송_더들리": "", "방송_빅페이스": "",
-    "방송_나의시선": "", "방송_기타": ""
-  }},
-  "signature1": {{"메뉴명": "", "주재료": "", "요리방법": "", "설명": "", "가격": ""}},
-  "signature2": {{"메뉴명": "", "주재료": "", "요리방법": "", "설명": "", "가격": ""}},
-  "signature3": {{"메뉴명": "", "주재료": "", "요리방법": "", "설명": "", "가격": ""}},
-  "국가": "", "시도": "", "지역": "", "주소": "",
-  "MRT역": "", "MRT도보": "", "전화번호": "",
-  "예약여부": "", "대기피하는시간": "", "팁및정보": "",
-  "영업시간": "", "브레이크타임": "", "라스트오더": "", "정기휴무": "",
-  "가격대": "", "Homepage": ""
-}}
+    prompt = f"""맛집 전문 리서처. 식당명: {restaurant_name}
+JSON만 출력. 정보없는항목=빈문자열. 한국=한글, 해외영어권=한글/영어, 비영어권=한글/영어/현지어. 가격:한국=원화,해외=현지통화+한화.
+{{"식당명":"","음식국적":"","카테고리":"","기준메뉴":"","추천사유":{{"미슐랭":"","블루리본":"","로컬인증":"","노포":"","백년가게":"","오래가게":"","방송_생활의달인":"","방송_수요미식회":"","방송_허영만":"","방송_백종원":"","방송_정용진":"","방송_전현무":"","방송_요리경연":"","방송_더들리":"","방송_빅페이스":"","방송_나의시선":"","방송_기타":""}},"signature1":{{"메뉴명":"","주재료":"","요리방법":"","설명":"","가격":""}},"signature2":{{"메뉴명":"","주재료":"","요리방법":"","설명":"","가격":""}},"signature3":{{"메뉴명":"","주재료":"","요리방법":"","설명":"","가격":""}},"국가":"","시도":"","지역":"","주소":"","MRT역":"","MRT도보":"","전화번호":"","예약여부":"","대기피하는시간":"","팁및정보":"","영업시간":"","브레이크타임":"","라스트오더":"","정기휴무":"","가격대":"","Homepage":""}}
 """
     response = model.generate_content(prompt)
     raw = response.text.strip()
@@ -535,7 +470,7 @@ def main():
     for key, default in [
         ("nearby_list",[]), ("simple_infos",[]), ("page_index",0),
         ("detail_info",None), ("user_lat",None), ("user_lng",None),
-        ("nopo_filter",None), ("prev_settings",None)
+        ("nopo_filter",None), ("prev_settings",None), ("detail_cache",{})
     ]:
         if key not in st.session_state: st.session_state[key] = default
 
@@ -638,12 +573,19 @@ def main():
                 for i, info in enumerate(sorted_infos):
                     show_simple_card(info, i+1)
                     if st.button(f"📄 {info.get('식당명','')} 상세보기", key=f"detail_btn_{i}", use_container_width=True):
-                        with st.spinner(f"'{info.get('식당명','')}' 상세 정보 조사 중..."):
-                            try:
-                                detail = get_detail_info(info.get("식당명",""))
-                                st.session_state.detail_info = detail
-                                st.rerun()
-                            except Exception as e: st.error(f"❌ {e}")
+                        name = info.get("식당명","")
+                        # C) 캐시 확인
+                        if name in st.session_state.detail_cache:
+                            st.session_state.detail_info = st.session_state.detail_cache[name]
+                            st.rerun()
+                        else:
+                            with st.spinner(f"'{name}' 상세 정보 조사 중..."):
+                                try:
+                                    detail = get_detail_info(name)
+                                    st.session_state.detail_cache[name] = detail
+                                    st.session_state.detail_info = detail
+                                    st.rerun()
+                                except Exception as e: st.error(f"❌ {e}")
 
                 if page_end < total:
                     st.divider()
@@ -658,11 +600,17 @@ def main():
         restaurant_name = st.text_input("식당명", placeholder="예) 진주회관  /  홍콩, Tim Ho Wan", key="direct_input", label_visibility="collapsed")
         if st.button("🔍 정보 조회", use_container_width=True, type="primary", key="direct_btn"):
             if restaurant_name:
-                with st.spinner(f"'{restaurant_name}' 정보 조사 중..."):
-                    try:
-                        detail = get_detail_info(restaurant_name)
-                        st.session_state.detail_info = detail
-                    except Exception as e: st.error(f"❌ {e}")
+                # C) 캐시 확인
+                if restaurant_name in st.session_state.detail_cache:
+                    st.session_state.detail_info = st.session_state.detail_cache[restaurant_name]
+                    st.rerun()
+                else:
+                    with st.spinner(f"'{restaurant_name}' 정보 조사 중..."):
+                        try:
+                            detail = get_detail_info(restaurant_name)
+                            st.session_state.detail_cache[restaurant_name] = detail
+                            st.session_state.detail_info = detail
+                        except Exception as e: st.error(f"❌ {e}")
             else: st.warning("식당명을 입력해주세요.")
 
     if st.session_state.detail_info:
