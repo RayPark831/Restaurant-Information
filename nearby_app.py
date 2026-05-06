@@ -23,8 +23,9 @@ ACCESS_PASSWORD = st.secrets["ACCESS_PASSWORD"]
 PLACES_API_KEY  = st.secrets["PLACES_API_KEY"]
 EXCEL_FILE  = "맛집정보.xlsx"
 SHEET_NAME  = "Sheet1"
-BATCH_SIZE  = 5
-MAX_RESULTS = 20
+BATCH_SIZE      = 5
+MAX_RESULTS     = 20
+MIN_SCORE_MID   = 20   # Mid 중요도 최소 점수 (이 이상만 표시)
 
 # ──────────────────────────────────────────────────────
 # 페이지 설정
@@ -566,34 +567,67 @@ def main():
                     st.rerun()
 
             if st.session_state.simple_infos:
-                sorted_infos = sorted(st.session_state.simple_infos, key=calc_priority_score, reverse=True)
-                st.markdown(f'<p class="section-title">🍽️ 맛집 목록 - 중요도순 ({len(sorted_infos)}개)</p>', unsafe_allow_html=True)
-                st.caption("🔴 High중요도  🟠 Mid중요도  🔵 Low중요도")
+                # 중요도 점수 계산 후 Mid 이상만 필터링
+                scored_infos = [
+                    (calc_priority_score(info), info)
+                    for info in st.session_state.simple_infos
+                ]
+                filtered_infos = sorted(
+                    [(s, info) for s, info in scored_infos if s >= MIN_SCORE_MID],
+                    key=lambda x: x[0], reverse=True
+                )
+                low_infos = [info for s, info in scored_infos if s < MIN_SCORE_MID]
 
-                for i, info in enumerate(sorted_infos):
-                    show_simple_card(info, i+1)
-                    if st.button(f"📄 {info.get('식당명','')} 상세보기", key=f"detail_btn_{i}", use_container_width=True):
+                st.markdown(
+                    f'<p class="section-title">🍽️ 맛집 목록 - 중요도순</p>',
+                    unsafe_allow_html=True
+                )
+                st.caption("🔴 High중요도  🟠 Mid중요도  |  Mid 미만은 결과 없음으로 표시")
+
+                if filtered_infos:
+                    for i, (score, info) in enumerate(filtered_infos):
+                        show_simple_card(info, i+1)
                         name = info.get("식당명","")
-                        # C) 캐시 확인
-                        if name in st.session_state.detail_cache:
-                            st.session_state.detail_info = st.session_state.detail_cache[name]
-                            st.rerun()
-                        else:
-                            with st.spinner(f"'{name}' 상세 정보 조사 중..."):
-                                try:
-                                    detail = get_detail_info(name)
-                                    st.session_state.detail_cache[name] = detail
-                                    st.session_state.detail_info = detail
-                                    st.rerun()
-                                except Exception as e: st.error(f"❌ {e}")
+                        if st.button(f"📄 {name} 상세보기",
+                                     key=f"detail_btn_{i}", use_container_width=True):
+                            if name in st.session_state.detail_cache:
+                                st.session_state.detail_info = st.session_state.detail_cache[name]
+                                st.rerun()
+                            else:
+                                with st.spinner(f"'{name}' 상세 정보 조사 중..."):
+                                    try:
+                                        detail = get_detail_info(name)
+                                        st.session_state.detail_cache[name] = detail
+                                        st.session_state.detail_info = detail
+                                        st.rerun()
+                                    except Exception as e: st.error(f"❌ {e}")
+                else:
+                    st.warning("⚠️ 현재 조회된 식당 중 Mid 중요도 이상의 맛집이 없습니다.")
+
+                # Low 중요도 식당 목록 (접기)
+                if low_infos:
+                    with st.expander(f"🔵 중요도 미달 식당 ({len(low_infos)}개) - 클릭하여 펼치기"):
+                        st.caption("아래 식당들은 중요도 기준 미달이지만 참고용으로 표시합니다")
+                        for info in low_infos:
+                            st.markdown(
+                                f'<div class="rest-card" style="opacity:0.6;">' +
+                                f'<span class="badge badge-blue">Low</span> ' +
+                                f'<b>{info.get("식당명","")}</b> ' +
+                                f'<span style="font-size:0.8rem;opacity:0.7">📍 {info.get("거리","")}</span>' +
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
 
                 if page_end < total:
                     st.divider()
-                    remain = min(BATCH_SIZE, total-page_end)
-                    if st.button(f"➕ 추가 {remain}개 더 보기 ({page_end+1}~{min(page_end+BATCH_SIZE,total)}번)", use_container_width=True):
+                    remain = min(BATCH_SIZE, total - page_end)
+                    if st.button(
+                        f"➕ 추가 {remain}개 더 보기 ({page_end+1}~{min(page_end+BATCH_SIZE,total)}번)",
+                        use_container_width=True
+                    ):
                         st.session_state.page_index += 1; st.rerun()
                 else:
-                    st.caption(f"✅ 전체 {total}개 식당을 모두 조회했습니다.")
+                    st.caption(f"✅ 전체 {total}개 식당 조회 완료")
 
     with tab2:
         st.markdown("#### 🔍 식당명으로 직접 검색")
